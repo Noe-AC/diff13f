@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "diff13f"
+version = "0.1.1" # Version for pip
+description = "Dash app to compare two 13F filings and highlight the largest position changes between quarters."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "dash",
+    "dash-bootstrap-components",
+    "pandas",
+]
+
+[project.scripts]
+diff13f = "diff13f.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.package-data]
+diff13f = ["assets/*"]
+
+
+
