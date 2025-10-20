@@ -40,7 +40,7 @@ This will add the `diff13f` command to your PATH.
 
 ## 📸 Screenshots
 
-![URL2TLDR Screenshot](screenshots/screenshot-v0.1.1.png)
+![URL2TLDR Screenshot](screenshots/screenshot-v0.1.2.png)
 
 ## ⚖️ License
 

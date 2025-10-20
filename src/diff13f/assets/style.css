@@ -5,3 +5,77 @@ html, body {
     height: 100%;
     font-family: 'JetBrains Mono', 'Consolas', 'Courier New', monospace;
 }
+
+
+
+
+/* Style général du dropdown fermé */
+.cyberpunk-dropdown .Select-control,
+.cyberpunk-dropdown .Select__control {
+  background-color: black !important;
+  color: white !important;
+  border: 1px solid #00ffcc !important;
+  border-radius: 5px !important;
+  box-shadow: 0 0 10px #00ffcc !important;
+}
+
+/* Style du texte sélectionné */
+.cyberpunk-dropdown .Select-value-label,
+.cyberpunk-dropdown .Select__single-value {
+  color: white !important;
+}
+
+/* Style de la liste déroulante ouverte */
+.cyberpunk-dropdown .Select-menu-outer,
+.cyberpunk-dropdown .Select__menu {
+  background-color: black !important;
+  color: white !important;
+  border: 1px solid #00ffcc !important;
+  box-shadow: 0 0 15px #00ffcc !important;
+}
+
+/* Style des options individuelles */
+.cyberpunk-dropdown .Select-option,
+.cyberpunk-dropdown .Select__option {
+  background-color: black !important;
+  color: white !important;
+}
+
+.cyberpunk-dropdown .Select-option:hover,
+.cyberpunk-dropdown .Select__option--is-focused {
+  background-color: #00ffcc !important;
+  color: black !important;
+}
+
+/* Placeholder en gris */
+.cyberpunk-dropdown .Select-placeholder,
+.cyberpunk-dropdown .Select__placeholder {
+  color: #888 !important;
+}
+
+/* Spinner cyberpunk */
+.cyberpunk-spinner {
+  border: 3px solid #222;
+  border-top: 3px solid #00ffcc;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  animation: spin 1s linear infinite;
+  box-shadow: 0 0 15px #00ffcc;
+}
+.cyberpunk-spinner-text {
+  color: #00ffcc;
+  font-family: monospace;
+  font-size: 12px;
+  margin-top: 4px;
+}
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+
+
+
+
+
