@@ -1176,7 +1176,7 @@ def generate_cyber_neon_colors(
 def generate_all_quarters_figure(
     cik,
     merge_key ='name',
-    top_n     = 10,
+    top_n     = 18,
     alpha     = 0.5,  # smoothing factor
 ):
     if not cik:
@@ -1224,17 +1224,6 @@ def generate_all_quarters_figure(
     top_titles = df_transposed.loc[latest_quarter].nlargest(top_n).index
     df_top = df_transposed[top_titles].copy()
 
-    # Appliquer l'EWM sur chaque titre
-    df_ewm = pd.DataFrame(
-        index   = df_top.index,
-        columns = top_titles,
-        dtype   = float,
-    )
-    for title in top_titles:
-        series = df_top[title].dropna()
-        if len(series) > 0:
-            df_ewm.loc[series.index, title] = series.ewm(alpha=alpha, adjust=False).mean()
-
     five_cyber_colors = [
         "#00ffcc",  # cyan
         "#ff00ff",  # magenta
@@ -1266,24 +1255,16 @@ def generate_all_quarters_figure(
 
     # Création de la figure Plotly
     fig = go.Figure()
-    x_order = sorted(df_top.index.tolist())
-    fig.update_xaxes(
-        tickmode="array",
-        tickvals=x_order,
-        ticktext=x_order,
-        tickangle=45
-    )
     for i, title in enumerate(top_titles):
-        series = df_top[title].dropna()
-        if len(series) > 0:
-            smoothed = series.ewm(alpha=alpha, adjust=False).mean()
-            smoothed = smoothed.reindex(quarters)
+        s = df_top[title].dropna()
+        if len(s) > 0:
+            s = s.reindex(quarters)
             color = cyber_colors[i % len(cyber_colors)]
             # Glow : ligne épaisse semi-transparente
             fig.add_trace(
                 go.Scatter(
-                    x=smoothed.index,
-                    y=smoothed.values,
+                    x=s.index,
+                    y=s.values,
                     mode='lines',
                     line=dict(color=color, width=12),  # largeur épaisse pour le halo
                     opacity=0.2,                        # translucide
@@ -1295,8 +1276,8 @@ def generate_all_quarters_figure(
             # Ligne principale fine
             fig.add_trace(
                 go.Scatter(
-                    x=smoothed.index,
-                    y=smoothed.values,
+                    x=s.index,
+                    y=s.values,
                     mode='lines+markers',
                     name=title,
                     line=dict(color=color, width=3),   # ligne principale
@@ -1329,21 +1310,34 @@ def generate_all_quarters_figure(
     # Supprimer la grille horizontale
     fig.update_yaxes(showgrid=False)
 
-    # Réduire la densité des ticks sur l'axe X si beaucoup de quarters
-    if len(df_ewm.index) > 12:
-        step = max(1, len(df_ewm.index) // 12)
-        fig.update_xaxes(tickmode="array", tickvals=df_ewm.index[::step], tickangle=45)
+    # choisir les ticks à afficher (réduction de densité)
+    n_quarters = 20
+    if len(quarters) > n_quarters:
+        step = max(1, len(quarters) // n_quarters)
+        ticks = quarters[::step]
+    else:
+        ticks = quarters
+
+    # Forcer l'ordre des catégories et fixer tickvals/ticktext
+    fig.update_xaxes(
+        type='category',
+        categoryorder='array',
+        categoryarray=quarters,   # <-- impose l'ordre complet des x
+        tickmode='array',
+        tickvals=ticks,
+        ticktext=ticks,
+        tickangle=45,
+        tickfont=dict(family='monospace', color='white'),
+    )
 
     return fig
 
 def create_all_quarters(
     cik,
-    top_n = 18,
 ):
     # Génère la figure
     fig = generate_all_quarters_figure(
         cik     = cik,
-        top_n   = top_n,
     )
 
     return html.Div(
@@ -1776,7 +1770,7 @@ if __name__ == "__main__":
     main(
         turn_off_logs = False, # Need logs for dev
         open_browser  = False, # No need to open a browser for dev
-        debug         = True,  # Debug for dev
-        use_reloader  = True,  # Reload for dev
+        debug         = False,  # Debug for dev
+        use_reloader  = False,  # Reload for dev
     )
 

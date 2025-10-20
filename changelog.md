@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.3 (2025-10-19)
+
+- Fixed a bug in the function `generate_all_quarters_figure` where the curves where not in the good order.
+
 ## 0.1.2 (2025-10-19)
 
 - The green glow now oscillates in amplitude over time. By default this feature is not activated.
