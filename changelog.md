@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.4 (2025-10-20)
+
+- The function `parse_txt_data_to_raw_csv` now returns the set of cik for which something was imported.
+- The function `get_cik_folders` has a new parameter `cik_set`.
+- The function `convert_raw_csv_to_clean_csv` has a new parameter `cik_set`.
+- The function `map_nameOfIssuer_variants` has a new parameter `cik_set`.
+- The function `merge_portfolio_proportions` has a new parameter `cik_set`.
+- Now the function `parse_txt_data_to_raw_csv` ignores the file in more situations when parsing issues occur.
+
 ## 0.1.3 (2025-10-19)
 
 - Fixed a bug in the function `generate_all_quarters_figure` where the curves where not in the good order.

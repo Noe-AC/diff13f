@@ -50,9 +50,14 @@ FIG_WIDTH = 960
 ################################################################################
 # Utility functions
 
-def get_cik_folders():
+def get_cik_folders(
+    cik_set = None,
+):
     # Look at the cik folders in the output directory
-    cik_folders = sorted(glob.glob("output/[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]"))
+    cik_folders = sorted(glob.glob("output/"+10*"[0-9]"))
+    # If a set of cik is provided, limit to this set
+    if isinstance(cik_set, set):
+        cik_folders = [cik_folder for cik_folder in cik_folders if cik_folder.split('/')[-1] in cik_set]
     # Return the result
     return cik_folders
 
@@ -95,6 +100,8 @@ def parse_txt_data_to_raw_csv(
     do_scrape_txt = True,
     verbose       = False,
 ):
+    # Create a set of cik
+    cik_set = set()
     # Define some patterns to look for
     patterns = {
         'accession_number': r'ACCESSION NUMBER:\s*(\d+)',
@@ -105,6 +112,8 @@ def parse_txt_data_to_raw_csv(
     }
     # Loop over the input files
     for content, filename in zip(contents_list, filename_list):
+        if verbose:
+            print(f"Parsing file {filename}")
         # Decode the base64 file
         content_type, content_string = content.split(",")
         text = base64.b64decode(content_string).decode("utf-8")
@@ -119,6 +128,8 @@ def parse_txt_data_to_raw_csv(
         company_conformed_name     = fields['company_conformed_name']
         filed_as_of_date           = fields['filed_as_of_date']
         conformed_period_of_report = fields['conformed_period_of_report']
+        # Add the cik to the set
+        cik_set.add(central_index_key)
         # Format dates as YYYY-MM-DD
         conformed_period_of_report = f"{conformed_period_of_report[:4]}-{conformed_period_of_report[4:6]}-{conformed_period_of_report[6:]}"
         filed_as_of_date           = f"{filed_as_of_date[:4]}-{filed_as_of_date[4:6]}-{filed_as_of_date[6:]}"
@@ -167,6 +178,13 @@ def parse_txt_data_to_raw_csv(
             # Convert remaining XML text to a dict
             d       = xmltodict.parse(text)
             d_info  = d['informationTable']['infoTable']
+            # Make d_info contains dicts
+            do_skip = False
+            for d_i in d_info:
+                if not isinstance(d_i, dict):
+                    do_skip=True
+            if do_skip: # The must be a problem
+                continue
             # Conversion en DataFrame
             df_out = pd.DataFrame({
                 'nameOfIssuer': [d_i['nameOfIssuer'] for d_i in d_info],
@@ -176,7 +194,7 @@ def parse_txt_data_to_raw_csv(
                 'shrsOrPrnAmt_sshPrnamt': [d_i['shrsOrPrnAmt']['sshPrnamt'] for d_i in d_info],
                 'shrsOrPrnAmt_sshPrnamtType': [d_i['shrsOrPrnAmt']['sshPrnamtType'] for d_i in d_info],
                 'investmentDiscretion': [d_i['investmentDiscretion'] for d_i in d_info],
-                'otherManager': [d_i['otherManager'] for d_i in d_info],
+                'otherManager': [d_i['otherManager'] if 'otherManager' in d_i else '' for d_i in d_info],
                 'votingAuthority_Sole': [d_i['votingAuthority']['Sole'] for d_i in d_info],
                 'votingAuthority_Shared': [d_i['votingAuthority']['Shared'] for d_i in d_info],
                 'votingAuthority_None': [d_i['votingAuthority']['None'] for d_i in d_info],
@@ -203,6 +221,10 @@ def parse_txt_data_to_raw_csv(
             positions_start = [match.start() for match in matches_start]
             matches_end     = re.finditer('</DOCUMENT>',text)
             positions_end   = [match.start() for match in matches_end]
+            if len(positions_start)==0:
+                continue
+            if len(positions_end)==0:
+                continue
             start = positions_start[-1]
             end   = positions_end[-1]
             text  = text[start:end+11]
@@ -211,6 +233,10 @@ def parse_txt_data_to_raw_csv(
             positions_start = [match.start() for match in matches_start]
             matches_end     = re.finditer('</TABLE>',text)
             positions_end   = [match.start() for match in matches_end]
+            if len(positions_start)==0:
+                continue
+            if len(positions_end)==0:
+                continue
             start = positions_start[-1]
             end   = positions_end[-1]
             text = text[start:end+8]
@@ -237,6 +263,9 @@ def parse_txt_data_to_raw_csv(
             # Convert the text to a DataFrame
             df_text = pd.read_fwf(io.StringIO(text),header=None)
             if df_text.shape[1]!=10:
+                do_ignore_problematic_fwf_files=True
+                if do_ignore_problematic_fwf_files:
+                    continue
                 if verbose:
                     print('PARSING ISSUE WITH FWF FILE - we fix it.')
                     print(df_text.columns.to_list())
@@ -301,6 +330,10 @@ def parse_txt_data_to_raw_csv(
                 'votingAuthority_None',
             ]
             df_text = df_text[columns]
+            if df_text['cusip'].notna().mean()<0.5: # There must be a problem
+                continue
+            if df_text['value'].dtype=='object': # There must be a problem
+                continue
             output_file = f"{output_dir_raw}/{quarter}_{filed_as_of_date}.csv"
             df_text['value'] = df_text['value'].fillna(0)
             df_text['portfolio %'] = 100*df_text['value'].astype(int)/df_text['value'].astype(int).sum()
@@ -313,7 +346,9 @@ def parse_txt_data_to_raw_csv(
 
     # Cleanup
     # Get the list of cik folders
-    cik_folders = get_cik_folders()
+    cik_folders = get_cik_folders(
+        cik_set = cik_set,
+    )
     # Loop over the cik folders
     for cik_folder in cik_folders:
         # Take the cik corresponding to the folder
@@ -324,9 +359,12 @@ def parse_txt_data_to_raw_csv(
         if len(input_files_raw)==0:
             shutil.rmtree(f"output/{cik}")
             print(f"WARNING: the so-called 'raw' folder is empty. Deleting the imported data for cik={cik}.")
+            cik_set.remove(cik)
         else:
             if verbose:
                 print(f"Number of raw files found for cik={cik}: {len(input_files_raw)}.")
+    # Return the cik for which something was imported
+    return cik_set
 
 def cik_to_company_conformed_name(
     cik,
@@ -352,9 +390,12 @@ def cik_to_company_conformed_name(
 
 def convert_raw_csv_to_clean_csv(
     verbose = False,
+    cik_set = None,
 ):
     # Get the list of cik folders
-    cik_folders = get_cik_folders()
+    cik_folders = get_cik_folders(
+        cik_set = cik_set,
+    )
     # Loop over the folders
     for cik_folder in cik_folders:
         # Take the central_index_key (cik)
@@ -406,6 +447,7 @@ def convert_raw_csv_to_clean_csv(
 
 def map_nameOfIssuer_variants(
     verbose = False,
+    cik_set = None,
 ):
     """
     For each cik, this function generates a csv of the unique triples (nameOfIssuer, titleOfClass, cusip).
@@ -414,7 +456,9 @@ def map_nameOfIssuer_variants(
     This file will be used down the road to identify the unique name of issuers.
     """
     # Get the list of cik folders
-    cik_folders = get_cik_folders()
+    cik_folders = get_cik_folders(
+        cik_set = cik_set
+    )
     # Loop over the folders
     for cik_folder in cik_folders:
         # Take the central_index_key (cik)
@@ -458,6 +502,7 @@ def map_nameOfIssuer_variants(
 
 def merge_portfolio_proportions(
     verbose = False,
+    cik_set = None,
 ):
     """
     L'implémentation avec Polars est beaucoup plus rapide que Pandas.
@@ -481,7 +526,9 @@ def merge_portfolio_proportions(
         'shares',
     ]
     # Get the list of cik folders
-    cik_folders = get_cik_folders()
+    cik_folders = get_cik_folders(
+        cik_set = cik_set,
+    )
     # Loop over the cik folders
     for cik_folder in cik_folders:
         # Take the cik
@@ -1502,16 +1549,23 @@ def register_callbacks(
             raise dash.exceptions.PreventUpdate
 
         # Parse the txt files to raw csv data
-        parse_txt_data_to_raw_csv(
+        cik_set = parse_txt_data_to_raw_csv(
             contents_list = contents,
             filename_list = filenames,
+            verbose       = False,
         )
         # Convert the raw csv data to clean csv data
-        convert_raw_csv_to_clean_csv()
+        convert_raw_csv_to_clean_csv(
+            cik_set = cik_set,
+        )
         # Map the variants of nameOfIssuer
-        map_nameOfIssuer_variants()
+        map_nameOfIssuer_variants(
+            cik_set = cik_set,
+        )
         # Merge the portfolio proportions
-        merge_portfolio_proportions()
+        merge_portfolio_proportions(
+            cik_set = cik_set,
+        )
 
         # Update the list of CIK after the import
         cik_folders = get_cik_folders()
@@ -1770,7 +1824,7 @@ if __name__ == "__main__":
     main(
         turn_off_logs = False, # Need logs for dev
         open_browser  = False, # No need to open a browser for dev
-        debug         = False,  # Debug for dev
-        use_reloader  = False,  # Reload for dev
+        debug         = True,  # Debug for dev
+        use_reloader  = True,  # Reload for dev
     )
 
