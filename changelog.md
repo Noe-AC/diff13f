@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.5 (2025-10-21)
+
+- The scope of the function `parse_txt_data_to_raw_csv` is now limited to convert a single txt file to a single csv file.
+- New function `parse_contents_to_raw_csv` that takes the list of selected contents and uses the function `parse_txt_data_to_raw_csv` to convert them to raw csv files.
+- New function `parse_13f_fwf` which aims at parsing all the old nasty non standard FWF files.
+- New function `generate_quarters` to reindex the quarters from the first to the last, used in the function `generate_all_quarters_figure`.
+
 ## 0.1.4 (2025-10-20)
 
 - The function `parse_txt_data_to_raw_csv` now returns the set of cik for which something was imported.

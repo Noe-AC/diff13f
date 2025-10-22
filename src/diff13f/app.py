@@ -93,15 +93,109 @@ def date_to_quarter(
         raise ValueError(f"Invalid month: {month}")
     return f"{year}-{quarter}"
 
+def parse_13f_fwf(
+    text: str,
+    verbose = False,
+):
+    # Split the text in rows
+    rows = text.splitlines()
+    # Find the first row with a <S> and multiple <C>
+    i_S_C = None
+    kind = None
+    for i,row in enumerate(rows):
+        # Bridgewater Associates style
+        if '<S>' in row and '<C>' in row:
+            i_S_C = i
+            kind = '<'
+            break
+    # If such a row was not found, let's try another pattern
+    for i,row in enumerate(rows):
+        row_stripped = row.strip()
+        # Renaissance Technologies style
+        if row_stripped and all(c in ['_',' '] for c in row_stripped):
+            i_S_C = i
+            kind = '_'
+            break
+    # If such a row was not found, return nothing
+    if i_S_C is None:
+        return None
+    # Find the positions of the start of the columns
+    row_S_C = rows[i_S_C]
+    if kind=='<':
+        col_starts = [m.start() for m in re.finditer('<', row_S_C)]
+    elif kind=='_':
+        col_starts = [0] + [m.start() for m in re.finditer(r' _', row_S_C)]
+
+    if len(col_starts)<6:
+        return None
+    # Create a dict d to convert to a DataFrame
+    d = {
+        'nameOfIssuer'           : [],
+        'titleOfClass'           : [],
+        'cusip'                  : [],
+        'value'                  : [],
+        'shrsOrPrnAmt_sshPrnamt' : [],
+    }
+    # Loop over the rows that contain relevant information
+    for row in rows[i_S_C+1:]:
+        # If the row is too short, skip it
+        if len(row)<col_starts[-1]:
+            continue
+        # Take the first five components
+        nameOfIssuer           = row[col_starts[0]:col_starts[1]].strip()
+        titleOfClass           = row[col_starts[1]:col_starts[2]].strip()
+        cusip                  = row[col_starts[2]:col_starts[3]].strip()
+        value                  = row[col_starts[3]:col_starts[4]].strip().replace(',','')
+        shrsOrPrnAmt_sshPrnamt = row[col_starts[4]:col_starts[5]].strip().replace(',','')
+        # If there are any problems, skip the row
+        if len(nameOfIssuer)==0:
+            continue
+        if len(titleOfClass)==0:
+            continue
+        if len(cusip)==0:
+            continue
+        if len(value)==0:
+            continue
+        if len(shrsOrPrnAmt_sshPrnamt)==0:
+            continue
+        try:
+            value = int(value)
+        except:
+            continue
+        try:
+            shrsOrPrnAmt_sshPrnamt = int(shrsOrPrnAmt_sshPrnamt)
+        except:
+            continue
+        # Keep the values
+        d['nameOfIssuer'].append(nameOfIssuer)
+        d['titleOfClass'].append(titleOfClass)
+        d['cusip'].append(cusip)
+        d['value'].append(value)
+        d['shrsOrPrnAmt_sshPrnamt'].append(shrsOrPrnAmt_sshPrnamt)
+
+    # Convert the dict to a DataFrame
+    columns = [
+        'nameOfIssuer',
+        'titleOfClass',
+        'cusip',
+        'value',
+        'shrsOrPrnAmt_sshPrnamt',
+    ]
+    df = pd.DataFrame(d,columns=columns)
+    # Group by name, title and cusip
+    df.groupby(["nameOfIssuer","titleOfClass","cusip"]).sum()
+    # Return the result
+    if len(df)==0:
+        return None
+    else:
+        return df
+
 def parse_txt_data_to_raw_csv(
-    contents_list,
-    filename_list,
+    text: str,
     do_scrape_xml = True,
     do_scrape_txt = True,
     verbose       = False,
 ):
-    # Create a set of cik
-    cik_set = set()
     # Define some patterns to look for
     patterns = {
         'accession_number': r'ACCESSION NUMBER:\s*(\d+)',
@@ -110,239 +204,178 @@ def parse_txt_data_to_raw_csv(
         'company_conformed_name': r'COMPANY CONFORMED NAME:\s*(.+)',
         'central_index_key': r'CENTRAL INDEX KEY:\s*(\d+)',
     }
+    # Fine some informations about the file
+    fields = {}
+    for key, pattern in patterns.items():
+        match = re.search(pattern, text)
+        fields[key] = match.group(1) if match else None
+    # Define some variables
+    cik                        = fields['central_index_key']
+    accession_number           = fields['accession_number']
+    company_conformed_name     = fields['company_conformed_name']
+    filed_as_of_date           = fields['filed_as_of_date']
+    conformed_period_of_report = fields['conformed_period_of_report']
+    # Format dates as YYYY-MM-DD
+    conformed_period_of_report = f"{conformed_period_of_report[:4]}-{conformed_period_of_report[4:6]}-{conformed_period_of_report[6:]}"
+    filed_as_of_date           = f"{filed_as_of_date[:4]}-{filed_as_of_date[4:6]}-{filed_as_of_date[6:]}"
+    # Convert the date to a quarter
+    quarter = date_to_quarter(
+        date_str = conformed_period_of_report,
+    )
+    # Print some infos
+    if verbose:
+        print(f"{cik} / {company_conformed_name} / filed {filed_as_of_date} / period {conformed_period_of_report} / quarter {quarter}")
+    # Create the output directory for the company metadata
+    output_dir_meta = f"output/{cik}/meta"
+    os.makedirs(output_dir_meta, exist_ok=True)
+    # Export the metadata
+    metadata = {
+        "central_index_key": cik,
+        "accession_number": accession_number,
+        "company_conformed_name": company_conformed_name,
+        "filed_as_of_date": filed_as_of_date,
+        "conformed_period_of_report": conformed_period_of_report,
+        "quarter": quarter
+    }
+    output_file_meta = f"{output_dir_meta}/{quarter}_{filed_as_of_date}.json"
+    if verbose:
+        print("Exporting meta file :",output_file_meta)
+    with open(output_file_meta, "w", encoding="utf-8") as f:
+        json.dump(metadata, f, ensure_ascii=False, indent=4)
+
+    # Create the output directory for the raw csv files
+    output_dir_raw = f"output/{cik}/raw"
+    os.makedirs(output_dir_raw, exist_ok=True)
+    # Keep only what we need
+    matches_start   = re.finditer('<XML>',text)
+    positions_start = [match.start() for match in matches_start]
+    matches_end     = re.finditer('</XML>',text)
+    positions_end   = [match.start() for match in matches_end]
+    if len(positions_start)>0:
+        if verbose:
+            print('XML found')
+        scraping_type = 'XML'
+        if not do_scrape_xml:
+            return cik
+        start = positions_start[-1]
+        end   = positions_end[-1]
+        text = text[start+6:end]
+        # Convert remaining XML text to a dict
+        d       = xmltodict.parse(text)
+        d_info  = d['informationTable']['infoTable']
+        # Make d_info contains dicts
+        do_skip = False
+        for d_i in d_info:
+            if not isinstance(d_i, dict):
+                do_skip=True
+        if do_skip: # The must be a problem
+            return cik
+        # Conversion en DataFrame
+        df_out = pd.DataFrame({
+            'nameOfIssuer': [d_i['nameOfIssuer'] for d_i in d_info],
+            'titleOfClass': [d_i['titleOfClass'] for d_i in d_info],
+            'cusip': [d_i['cusip'] for d_i in d_info],
+            'value': [d_i['value'] for d_i in d_info],
+            'shrsOrPrnAmt_sshPrnamt': [d_i['shrsOrPrnAmt']['sshPrnamt'] for d_i in d_info],
+            'shrsOrPrnAmt_sshPrnamtType': [d_i['shrsOrPrnAmt']['sshPrnamtType'] for d_i in d_info],
+            'investmentDiscretion': [d_i['investmentDiscretion'] for d_i in d_info],
+            'otherManager': [d_i['otherManager'] if 'otherManager' in d_i else '' for d_i in d_info],
+            'votingAuthority_Sole': [d_i['votingAuthority']['Sole'] for d_i in d_info],
+            'votingAuthority_Shared': [d_i['votingAuthority']['Shared'] for d_i in d_info],
+            'votingAuthority_None': [d_i['votingAuthority']['None'] for d_i in d_info],
+        })
+        # Add the % of the portfolio
+        df_out['portfolio %'] = 100*df_out['value'].astype(int)/df_out['value'].astype(int).sum()
+        # Sort by the name
+        df_out.sort_values(by='nameOfIssuer',inplace=True)
+        # Export the file
+        output_file = f"{output_dir_raw}/{quarter}_{filed_as_of_date}.csv"
+        if verbose:
+            print("Exporting :",output_file)
+        df_out.to_csv(output_file,index=False)
+        if verbose:
+            print('CSV file exported.')
+    else:
+        if verbose:
+            print('No XML found')
+        scraping_type = 'TXT'
+        if not do_scrape_txt:
+            return cik
+        # Keep only what we need
+        matches_start   = re.finditer('<DOCUMENT>',text)
+        positions_start = [match.start() for match in matches_start]
+        matches_end     = re.finditer('</DOCUMENT>',text)
+        positions_end   = [match.start() for match in matches_end]
+        if len(positions_start)==0:
+            if verbose:
+                print("WARNING: positions_start is of length zero. Skip.")
+            return cik
+        if len(positions_end)==0:
+            if verbose:
+                print("WARNING: positions_end is of length zero. Skip.")
+            return cik
+        start = positions_start[-1]
+        end   = positions_end[-1]
+        text  = text[start:end+11]
+        # Find the main table
+        matches_start   = re.finditer('<TABLE>',text)
+        positions_start = [match.start() for match in matches_start]
+        matches_end     = re.finditer('</TABLE>',text)
+        positions_end   = [match.start() for match in matches_end]
+        if len(positions_start)==0:
+            if verbose:
+                print("WARNING: positions_start is of length zero. Skip.")
+            return cik
+        if len(positions_end)==0:
+            if verbose:
+                print("WARNING: positions_end is of length zero. Skip.")
+            return cik
+        start = positions_start[-1]
+        end   = positions_end[-1]
+        text = text[start:end+8]
+        # Parse the FWF text to a DataFrame
+        df_text = parse_13f_fwf(
+            text    = text,
+            verbose = verbose,
+        )
+        if not isinstance(df_text, pd.DataFrame):
+            return cik
+        output_file = f"{output_dir_raw}/{quarter}_{filed_as_of_date}.csv"
+        df_text['value'] = df_text['value'].fillna(0)
+        df_text['portfolio %'] = 100*df_text['value'].astype(int)/df_text['value'].astype(int).sum()
+        df_text.sort_values(by='nameOfIssuer',inplace=True)
+        if verbose:
+            print("Exporting :",output_file)
+        df_text.to_csv(output_file,index=False)
+        if verbose:
+            print('CSV file exported.')
+    return cik
+
+def parse_contents_to_raw_csv(
+    contents,
+    filenames,
+    do_scrape_xml = True,
+    do_scrape_txt = True,
+    verbose       = False,
+):
+    # Create a set of cik
+    cik_set = set()
     # Loop over the input files
-    for content, filename in zip(contents_list, filename_list):
+    for content, filename in zip(contents, filenames):
         if verbose:
             print(f"Parsing file {filename}")
-        # Decode the base64 file
+        # Decode the base64 file to a string
         content_type, content_string = content.split(",")
         text = base64.b64decode(content_string).decode("utf-8")
-        # Fine some informations about the file
-        fields = {}
-        for key, pattern in patterns.items():
-            match = re.search(pattern, text)
-            fields[key] = match.group(1) if match else None
-        # Define some variables
-        central_index_key          = fields['central_index_key']
-        accession_number           = fields['accession_number']
-        company_conformed_name     = fields['company_conformed_name']
-        filed_as_of_date           = fields['filed_as_of_date']
-        conformed_period_of_report = fields['conformed_period_of_report']
-        # Add the cik to the set
-        cik_set.add(central_index_key)
-        # Format dates as YYYY-MM-DD
-        conformed_period_of_report = f"{conformed_period_of_report[:4]}-{conformed_period_of_report[4:6]}-{conformed_period_of_report[6:]}"
-        filed_as_of_date           = f"{filed_as_of_date[:4]}-{filed_as_of_date[4:6]}-{filed_as_of_date[6:]}"
-        # Convert the date to a quarter
-        quarter = date_to_quarter(
-            date_str = conformed_period_of_report,
+        # Parse the text data to a raw csv file
+        cik = parse_txt_data_to_raw_csv(
+            text          = text,
+            verbose       = verbose,
+            do_scrape_xml = do_scrape_xml,
+            do_scrape_txt = do_scrape_txt,
         )
-        # Print some infos
-        if verbose:
-            print(f"{central_index_key} / {company_conformed_name} / filed {filed_as_of_date} / period {conformed_period_of_report} / quarter {quarter}")
-        # Create the output directory for the company metadata
-        output_dir_meta = f"output/{central_index_key}/meta"
-        os.makedirs(output_dir_meta, exist_ok=True)
-        # Export the metadata
-        metadata = {
-            "central_index_key": central_index_key,
-            "accession_number": accession_number,
-            "company_conformed_name": company_conformed_name,
-            "filed_as_of_date": filed_as_of_date,
-            "conformed_period_of_report": conformed_period_of_report,
-            "quarter": quarter
-        }
-        output_file_meta = f"{output_dir_meta}/{quarter}_{filed_as_of_date}.json"
-        if verbose:
-            print("Exporting meta file :",output_file_meta)
-        with open(output_file_meta, "w", encoding="utf-8") as f:
-            json.dump(metadata, f, ensure_ascii=False, indent=4)
-
-        # Create the output directory for the raw csv files
-        output_dir_raw = f"output/{central_index_key}/raw"
-        os.makedirs(output_dir_raw, exist_ok=True)
-        # Keep only what we need
-        matches_start   = re.finditer('<XML>',text)
-        positions_start = [match.start() for match in matches_start]
-        matches_end     = re.finditer('</XML>',text)
-        positions_end   = [match.start() for match in matches_end]
-        if len(positions_start)>0:
-            if verbose:
-                print('XML found')
-            scraping_type = 'XML'
-            if not do_scrape_xml:
-                continue
-            start = positions_start[-1]
-            end   = positions_end[-1]
-            text = text[start+6:end]
-            # Convert remaining XML text to a dict
-            d       = xmltodict.parse(text)
-            d_info  = d['informationTable']['infoTable']
-            # Make d_info contains dicts
-            do_skip = False
-            for d_i in d_info:
-                if not isinstance(d_i, dict):
-                    do_skip=True
-            if do_skip: # The must be a problem
-                continue
-            # Conversion en DataFrame
-            df_out = pd.DataFrame({
-                'nameOfIssuer': [d_i['nameOfIssuer'] for d_i in d_info],
-                'titleOfClass': [d_i['titleOfClass'] for d_i in d_info],
-                'cusip': [d_i['cusip'] for d_i in d_info],
-                'value': [d_i['value'] for d_i in d_info],
-                'shrsOrPrnAmt_sshPrnamt': [d_i['shrsOrPrnAmt']['sshPrnamt'] for d_i in d_info],
-                'shrsOrPrnAmt_sshPrnamtType': [d_i['shrsOrPrnAmt']['sshPrnamtType'] for d_i in d_info],
-                'investmentDiscretion': [d_i['investmentDiscretion'] for d_i in d_info],
-                'otherManager': [d_i['otherManager'] if 'otherManager' in d_i else '' for d_i in d_info],
-                'votingAuthority_Sole': [d_i['votingAuthority']['Sole'] for d_i in d_info],
-                'votingAuthority_Shared': [d_i['votingAuthority']['Shared'] for d_i in d_info],
-                'votingAuthority_None': [d_i['votingAuthority']['None'] for d_i in d_info],
-            })
-            # Add the % of the portfolio
-            df_out['portfolio %'] = 100*df_out['value'].astype(int)/df_out['value'].astype(int).sum()
-            # Sort by the name
-            df_out.sort_values(by='nameOfIssuer',inplace=True)
-            # Export the file
-            output_file = f"{output_dir_raw}/{quarter}_{filed_as_of_date}.csv"
-            if verbose:
-                print("Exporting :",output_file)
-            df_out.to_csv(output_file,index=False)
-            if verbose:
-                print('CSV file exported.')
-        else:
-            if verbose:
-                print('No XML found')
-            scraping_type = 'TXT'
-            if not do_scrape_txt:
-                continue
-            # Keep only what we need
-            matches_start   = re.finditer('<DOCUMENT>',text)
-            positions_start = [match.start() for match in matches_start]
-            matches_end     = re.finditer('</DOCUMENT>',text)
-            positions_end   = [match.start() for match in matches_end]
-            if len(positions_start)==0:
-                continue
-            if len(positions_end)==0:
-                continue
-            start = positions_start[-1]
-            end   = positions_end[-1]
-            text  = text[start:end+11]
-            # Find the main table
-            matches_start   = re.finditer('<TABLE>',text)
-            positions_start = [match.start() for match in matches_start]
-            matches_end     = re.finditer('</TABLE>',text)
-            positions_end   = [match.start() for match in matches_end]
-            if len(positions_start)==0:
-                continue
-            if len(positions_end)==0:
-                continue
-            start = positions_start[-1]
-            end   = positions_end[-1]
-            text = text[start:end+8]
-            rows = text.split('\n')
-            # If the text is too short
-            if len(rows)<10:
-                print(f"WARNING: the file {filename} is too short, it is skipped.")
-                continue
-            if rows[9]=='<C>':
-                bad_parsing=1
-                if verbose:
-                    print('BAD_PARSING - will be fixed.')
-                rows = rows[10:-1]
-            else:
-                bad_parsing=0
-                rows = rows[6:-1]
-            # Fix a possible bad parsing of some files
-            if bad_parsing:
-                if verbose:
-                    print('Fixed the parsing')
-                rows = [i+'        '+j for i,j in zip(rows[::2],rows[1::2])]
-            # Convert the rows to a text
-            text = '\n'.join(rows)
-            # Convert the text to a DataFrame
-            df_text = pd.read_fwf(io.StringIO(text),header=None)
-            if df_text.shape[1]!=10:
-                do_ignore_problematic_fwf_files=True
-                if do_ignore_problematic_fwf_files:
-                    continue
-                if verbose:
-                    print('PARSING ISSUE WITH FWF FILE - we fix it.')
-                    print(df_text.columns.to_list())
-                m = df_text.shape[1]
-                if m==9:
-                    if verbose:
-                        print('m='+str(m))
-                        print('m (old) =',m)
-                    widths = [29,17,10,8,8,3,11,24,9,9]
-                    df_text = pd.read_fwf(io.StringIO(text),header=None,widths=widths)
-                    m = df_text.shape[1]
-                    if verbose:
-                        print('m (new) =',m)
-                        print('Fixed.')
-                elif m==11:
-                    if verbose:
-                        print('m (old) =',m)
-                    widths = [29,17,10,8,8,3,11,24,9,7]
-                    df_text = pd.read_fwf(io.StringIO(text),header=None,widths=widths)
-                    m = df_text.shape[1]
-                    if verbose:
-                        print('m (new) =',m)
-                        print('Fixed.')
-                elif m==8:
-                    if verbose:
-                        print('m (old) =',m)
-                    widths = [29,17,10,8,8,3,11,24,9,9]
-                    df_text = pd.read_fwf(io.StringIO(text),header=None,widths=widths)
-                    m = df_text.shape[1]
-                    if verbose:
-                        print('m (new) =',m)
-                        print('Fixed.')
-                else:
-                    print('ERROR - m='+str(m))
-                    quit()
-            columns = [
-                'nameOfIssuer',
-                'titleOfClass',
-                'cusip',
-                'value',
-                'shrsOrPrnAmt_sshPrnamt',
-                'shrsOrPrnAmt_sshPrnamtType',
-                'investmentDiscretion',
-                #'otherManager',
-                'votingAuthority_Sole',
-                'votingAuthority_Shared',
-                'votingAuthority_None',
-            ]
-            df_text.columns = columns
-            df_text['otherManager'] = 0
-            columns = [
-                'nameOfIssuer',
-                'titleOfClass',
-                'cusip',
-                'value',
-                'shrsOrPrnAmt_sshPrnamt',
-                'shrsOrPrnAmt_sshPrnamtType',
-                'investmentDiscretion',
-                #'otherManager',
-                'votingAuthority_Sole',
-                'votingAuthority_Shared',
-                'votingAuthority_None',
-            ]
-            df_text = df_text[columns]
-            if df_text['cusip'].notna().mean()<0.5: # There must be a problem
-                continue
-            if df_text['value'].dtype=='object': # There must be a problem
-                continue
-            output_file = f"{output_dir_raw}/{quarter}_{filed_as_of_date}.csv"
-            df_text['value'] = df_text['value'].fillna(0)
-            df_text['portfolio %'] = 100*df_text['value'].astype(int)/df_text['value'].astype(int).sum()
-            df_text.sort_values(by='nameOfIssuer',inplace=True)
-            if verbose:
-                print("Exporting :",output_file)
-            df_text.to_csv(output_file,index=False)
-            if verbose:
-                print('CSV file exported.')
+        # Add the cik to the set
+        cik_set.add(cik)
 
     # Cleanup
     # Get the list of cik folders
@@ -474,7 +507,14 @@ def map_nameOfIssuer_variants(
         # Lazy loading
         l_df_lazy = []
         for input_file in input_files:
-            df_lazy = pl.scan_csv(input_file).select(["nameOfIssuer", "titleOfClass", "cusip"])
+            df_lazy = pl.scan_csv(
+                input_file,
+                schema_overrides = {
+                    "nameOfIssuer": pl.Utf8,
+                    "titleOfClass": pl.Utf8,
+                    "cusip":        pl.Utf8,
+                }
+            ).select(["nameOfIssuer", "titleOfClass", "cusip"])
             l_df_lazy.append(df_lazy)
         # Lazy vertical concat
         df_all_lazy = pl.concat(l_df_lazy)
@@ -555,10 +595,28 @@ def merge_portfolio_proportions(
                     quarter = os.path.basename(input_file).split('.')[0]  # '1999-q3'
                     if merge_key!='name':
                         # Read the csv and keep only the columns (merge_key, target_column)
-                        df = pl.read_csv(input_file, columns=[merge_key, target_column])
+                        df = pl.read_csv(
+                            input_file,
+                            columns = [
+                                merge_key,
+                                target_column,
+                            ],
+                            schema_overrides = {
+                                merge_key: pl.Utf8,
+                            }
+                        )
                     else:
                         # Read the dataframe
-                        df = pl.read_csv(input_file, columns=['nameOfIssuer', target_column])
+                        df = pl.read_csv(
+                            input_file,
+                            columns = [
+                                'nameOfIssuer',
+                                target_column,
+                            ],
+                            schema_overrides = {
+                                'nameOfIssuer': pl.Utf8,
+                            }
+                        )
                         # Map the 'nameOfIssuer' to 'name' using the dataframe with columns ('nameOfIssuer', 'name')
                         df = df.join(
                             df_map,
@@ -1220,6 +1278,24 @@ def generate_cyber_neon_colors(
         colors.append(hex_color)
     return colors
 
+def generate_quarters(
+    first_quarter: str,
+    latest_quarter: str,
+) -> list[str]:
+    # Séparer année et trimestre
+    fy, fq = first_quarter.split("-q")
+    ly, lq = latest_quarter.split("-q")
+    fy, fq, ly, lq = int(fy), int(fq), int(ly), int(lq)
+    
+    quarters = []
+    for year in range(fy, ly + 1):
+        # Trimestres à inclure pour cette année
+        start_q = fq if year == fy else 1
+        end_q = lq if year == ly else 4
+        for q in range(start_q, end_q + 1):
+            quarters.append(f"{year}-q{q}")
+    return quarters
+
 def generate_all_quarters_figure(
     cik,
     merge_key ='name',
@@ -1267,7 +1343,13 @@ def generate_all_quarters_figure(
 
     # Top N titres basé sur le dernier trimestre
     quarters = df_transposed.index.to_list()
+    first_quarter  = quarters[0]
     latest_quarter = quarters[-1]
+    quarters = generate_quarters(
+        first_quarter  = first_quarter,
+        latest_quarter = latest_quarter,
+    )
+
     top_titles = df_transposed.loc[latest_quarter].nlargest(top_n).index
     df_top = df_transposed[top_titles].copy()
 
@@ -1310,10 +1392,10 @@ def generate_all_quarters_figure(
             # Glow : ligne épaisse semi-transparente
             fig.add_trace(
                 go.Scatter(
-                    x=s.index,
-                    y=s.values,
-                    mode='lines',
-                    line=dict(color=color, width=12),  # largeur épaisse pour le halo
+                    x    = s.index,
+                    y    = s.values,
+                    mode = 'lines',
+                    line = dict(color=color, width=12),  # largeur épaisse pour le halo
                     opacity=0.2,                        # translucide
                     hoverinfo='skip',                   # pas de hover sur le glow
                     showlegend=False
@@ -1549,10 +1631,10 @@ def register_callbacks(
             raise dash.exceptions.PreventUpdate
 
         # Parse the txt files to raw csv data
-        cik_set = parse_txt_data_to_raw_csv(
-            contents_list = contents,
-            filename_list = filenames,
-            verbose       = False,
+        cik_set = parse_contents_to_raw_csv(
+            contents  = contents,
+            filenames = filenames,
+            verbose   = False,
         )
         # Convert the raw csv data to clean csv data
         convert_raw_csv_to_clean_csv(
