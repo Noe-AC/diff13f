@@ -42,7 +42,7 @@ import colorsys
 
 TEXTBOX_HEIGHT = "220px"
 SPINNER_TYPE = "dot"
-MAX_WIDTH = "1000px"
+WIDTH = "1000px"
 FIG_HEIGHT = 520
 FIG_WIDTH = 960
 
@@ -706,26 +706,26 @@ def create_header():
     )
 
 def create_import_bar():
-    # Take the list of cik folders available
-    cik_folders = get_cik_folders()
+    # Take the list of cik numbers available
+    cik_numbers = get_cik_numbers()
 
-    if len(cik_folders)==0:
+    if len(cik_numbers)==0:
         # CIK dropdown
         dropdown_options     = []
         dropdown_value       = None
         dropdown_placeholder = "No CIK found."
-        # Conformed company name
-        conformed_company_name = ""
     else:
         # CIK dropdown
-        dropdown_options     = [{"label": cik_folder.split('/')[1], "value": cik_folder.split('/')[1]} for cik_folder in cik_folders]
-        cik                  = cik_folders[0].split('/')[1]
+        dropdown_options     = [
+            {
+                "label": f"{cik_number} - {cik_to_company_conformed_name(cik=cik_number)}",
+                "value": cik_number,
+            }
+            for cik_number in cik_numbers
+        ]
+        cik                  = cik_numbers[0]
         dropdown_value       = cik
         dropdown_placeholder = "Select CIK"
-        # Conformed company name
-        conformed_company_name = cik_to_company_conformed_name(
-            cik = cik,
-        )
 
     # Return the layout
     return html.Div(
@@ -733,9 +733,12 @@ def create_import_bar():
             # Sélecteur de fichiers
             dcc.Upload(
                 id="file-upload-selector",
-                children = html.Div([
-                    "Import 13F txt files"
-                ]),
+                children = html.Div(
+                    id = "Select 13F txt files to import.",
+                    children = [
+                        "Import 13F txt files"
+                    ],
+                ),
                 style = {
                     "width": "250px",
                     "height": "40px",
@@ -752,6 +755,7 @@ def create_import_bar():
                     "justifyContent": "center",      # centre horizontalement
                     "alignItems": "center",          # centre verticalement
                     "boxShadow": "0 0 10px #00ffcc",
+                    'marginRight': '20px',
                 },
                 multiple = True,
             ),
@@ -772,13 +776,13 @@ def create_import_bar():
                         children = [
                             # Dropdown des CIK disponibles
                             dcc.Dropdown(
-                                id="cik-dropdown",
+                                id          = "cik-dropdown",
                                 options     = dropdown_options,
                                 value       = dropdown_value,
                                 placeholder = dropdown_placeholder,
-                                clearable=False,
-                                style={
-                                    "width": "160px",
+                                clearable   = False,
+                                style       = {
+                                    "width": "630px",
                                     "height": "40px",
                                     "color": "white",
                                     "backgroundColor": "black",
@@ -788,7 +792,7 @@ def create_import_bar():
                                     "flex": "1",
                                     "minWidth": "0",  # important pour que flex fonctionne dans un parent flex
                                 },
-                                className="cyberpunk-dropdown",
+                                className = "cyberpunk-dropdown",
                             ),
                         ],
                     ),
@@ -797,13 +801,24 @@ def create_import_bar():
                     "flex": "1",
                     "display": "flex",
                     #"backgroundColor": 'orange',
+                    'marginRight': '20px',
                 },
             ),
             # Most recent conformed company name associated to the cik
             html.Div(
-                id="latest-company-name",
-                children = conformed_company_name,
-                style={
+                title    = "Open the 13F SEC page for this CIK.",
+                id       = "sec-link-button",
+                children = html.I(
+                    className = "bi bi-globe2",
+                    style = {
+                        #"fontSize": "22px",
+                        "color": "white",
+                    },
+                ),
+                n_clicks = 0,
+                style    = {
+                    # Cursor
+                    "cursor": "pointer",
                     # Size
                     "width": "100%",
                     "height": "40px",
@@ -838,7 +853,7 @@ def create_import_bar():
             "display": "flex",
             "flexDirection": "row",
             "alignItems": "center",
-            'gap': '20px',
+            #'gap': '20px',
             #'backgroundColor': 'blue',
         },
     )
@@ -1592,8 +1607,8 @@ def create_layout():
                     "display": "flex",
                     "flexDirection": "column",
                     "justifyContent": "flex-start",
-                    "maxWidth": MAX_WIDTH,
                     "margin": "0px auto",
+                    "width": WIDTH,
                 },
             ),
         ],
@@ -1648,16 +1663,19 @@ def register_callbacks(
         merge_portfolio_proportions(
             cik_set = cik_set,
         )
-
+        # Take the list of cik numbers available
+        cik_numbers = get_cik_numbers()
         # Update the list of CIK after the import
-        cik_folders = get_cik_folders()
-        dropdown_options = [
-            {"label": cik_folder.split("/")[-1], "value": cik_folder.split("/")[-1]}
-            for cik_folder in cik_folders
+        dropdown_options     = [
+            {
+                "label": f"{cik_number} - {cik_to_company_conformed_name(cik=cik_number)}",
+                "value": cik_number,
+            }
+            for cik_number in cik_numbers
         ]
         dropdown_placeholder = "Select CIK" if dropdown_options else "No CIK found."
-        dropdown_value = dropdown_options[0]["value"] if dropdown_options else None
-
+        dropdown_value = cik_numbers[0] if dropdown_options else None
+        # Return the result
         return (
             dropdown_options,
             dropdown_value,
@@ -1666,7 +1684,6 @@ def register_callbacks(
 
     # Mise à jour de l'interface par divers dropdown
     @app.callback(
-        Output("latest-company-name", "children"),
         Output("one-quarter-dropdown", "options"),
         Output("one-quarter-dropdown", "value"),
         Output("one-quarter-dropdown", "placeholder"),
@@ -1696,7 +1713,6 @@ def register_callbacks(
         ctx = callback_context
         trigger_type = ctx.triggered[0]["prop_id"]
 
-        company_conformed_name              = no_update
         one_quarter_dropdown_options        = no_update
         one_quarter_dropdown_placeholder    = no_update
         one_quarter_graph_figure            = no_update
@@ -1709,10 +1725,6 @@ def register_callbacks(
 
         if trigger_type in ['cik-dropdown.value', 'cik-dropdown.options']:
 
-            # Update the conformed name of the company
-            company_conformed_name = cik_to_company_conformed_name(
-                cik = cik_dropdown_value,
-            )
             # Update the one quarter dropdown
             quarters = get_cik_quarters(
                 cik       = cik_dropdown_value,
@@ -1783,7 +1795,6 @@ def register_callbacks(
 
         # On rend le résultat
         return (
-            company_conformed_name,
             one_quarter_dropdown_options,
             one_quarter_dropdown_value,
             one_quarter_dropdown_placeholder,
@@ -1798,6 +1809,19 @@ def register_callbacks(
             all_quarters_graph_figure,
         )
 
+    # Client-side JS callback (aucun délai)
+    app.clientside_callback(
+        """
+        function(n_clicks, cik) {
+            if (!n_clicks || !cik) return;
+            const url = `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${cik}&type=13F-HR%25&dateb=&owner=exclude&start=0&count=100`;
+            window.open(url, '_blank');
+        }
+        """,
+        Input("sec-link-button", "n_clicks"),
+        State("cik-dropdown", "value"),
+    )
+
     # Callback pour le changement de tab
     @app.callback(
         Output("one-quarter-div", "style"),
@@ -1807,7 +1831,7 @@ def register_callbacks(
         State("one-quarter-div", "style"),
         State("two-quarters-div", "style"),
         State("all-quarters-div", "style"),
-        prevent_initial_call=True
+        prevent_initial_call=True,
     )
     def change_tab(
         tabs_value,

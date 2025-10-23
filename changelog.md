@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.6 (2025-10-22)
+
+- Removed the div that was showing the company conformed name.
+- The dropdown to choose the cik is now wider and shows the company conformed name.
+- New button that opens up the SEC's web page for the 13F-HR filings of the selected cik.
+- Updated the project description in the `pyproject.toml`.
+- Updated the `README`.
+
 ## 0.1.5 (2025-10-21)
 
 - The scope of the function `parse_txt_data_to_raw_csv` is now limited to convert a single txt file to a single csv file.

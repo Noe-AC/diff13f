@@ -4,13 +4,13 @@
 
 # DIFF13F
 
-*DIFF13F* is a minimal Dash app designed to compare two quarterly 13F filings and identify the securities with the largest changes in holdings. It helps quickly spot which positions were added, reduced, or sold between quarters.
+*DIFF13F* is a minimal Dash app to explore quarterly 13F filings, view top positions, track changes between quarters, and visualize holdings over time.
 
 ## ✨ Features
-- 📊 Compare two 13F reports
-- 🔍 Identify new, increased, reduced, or sold positions
-- 🧮 Calculate position changes in value or shares
-- 💻 Simple web interface powered by Dash
+- 📊 Explore top positions in a single quarter
+- 🔍 Spot largest changes between two quarters
+- 📈 Track top positions over time with line plots across multiple quarters
+- 💻 Minimal web interface powered by Dash
 
 ## 🛠️ Installation
 
@@ -40,7 +40,7 @@ This will add the `diff13f` command to your PATH.
 
 ## 📸 Screenshots
 
-![URL2TLDR Screenshot](screenshots/screenshot-v0.1.3.png)
+![URL2TLDR Screenshot](screenshots/screenshot-v0.1.6.png)
 
 ## ⚖️ License
 
