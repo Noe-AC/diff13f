@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.7 (2025-10-22)
+
+- Improved the `README` (requirements, data source, limitations).
+
 ## 0.1.6 (2025-10-22)
 
 - Removed the div that was showing the company conformed name.
