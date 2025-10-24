@@ -50,6 +50,8 @@ You can find filings by looking up the company on the SEC EDGAR website. For exa
 - [0001037389 - Renaissance Technologies](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001037389&type=13F-HR%25&dateb=&owner=exclude&start=0&count=100)
 - [0001067983 - Berkshire Hathaway](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001067983&type=13F-HR%25&dateb=&owner=exclude&start=0&count=100)
 - [0001350694 - Bridgewater Associates](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001350694&type=13F-HR%25&dateb=&owner=exclude&start=0&count=100)
+- [0001423053 - Citadel Advisors](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001423053&type=13F-HR%25&dateb=&owner=exclude&start=0&count=100)
+- etc. (just take any of these URL and substitute the CIK).
 
 ## ⚠️ Limitations
 
@@ -62,7 +64,7 @@ Earlier filings use a fixed-width format (FWF), harder to parse and not fully su
 
 ## 📸 Screenshots
 
-![URL2TLDR Screenshot](screenshots/screenshot-v0.1.6.png)
+![URL2TLDR Screenshot](screenshots/screenshot-v0.1.9.png)
 
 ## ⚖️ License
 

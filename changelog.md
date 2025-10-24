@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.9 (2025-10-23)
+
+- Updated the screenshot.
+- Updated the `README`.
+
 ## 0.1.8 (2025-10-23)
 
 - For the function `generate_one_quarter_figure`, the name of the companies are now truncated to 30 characters max.
