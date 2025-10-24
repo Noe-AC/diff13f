@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.8 (2025-10-23)
+
+- For the function `generate_one_quarter_figure`, the name of the companies are now truncated to 30 characters max.
+- For the function `generate_two_quarters_figure`, the name of the companies are now truncated to 30 characters max.
+- For the function `generate_all_quarters_figure`, the name of the companies are now truncated to 30 characters max.
+- The function `merge_portfolio_proportions` now generates also mappings to the total value per company and per quarter.
+- The function `generate_all_quarters_figure` is renamed `generate_all_quarters_top_n_figure`.
+- New function `correct_13f_values` that corrects the total values based on a big jump. Usually it is at 2022-q4 that the value's denominator changed from 1k$ to 1$, but sometimes it's another date (e.g. for RenTec it's 2024-q2).
+- New function `generate_all_quarters_total_value_figure` that generates a figure of the total value over time.
+
 ## 0.1.7 (2025-10-22)
 
 - Improved the `README` (requirements, data source, limitations).

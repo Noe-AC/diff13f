@@ -36,9 +36,13 @@ import re
 import shutil
 import json
 import pandas as pd
-import xmltodict # pip install xmltodict
+import xmltodict
 import polars as pl
 import colorsys
+
+################################################################################
+################################################################################
+# Global variables
 
 TEXTBOX_HEIGHT = "220px"
 SPINNER_TYPE = "dot"
@@ -172,7 +176,6 @@ def parse_13f_fwf(
         d['cusip'].append(cusip)
         d['value'].append(value)
         d['shrsOrPrnAmt_sshPrnamt'].append(shrsOrPrnAmt_sshPrnamt)
-
     # Convert the dict to a DataFrame
     columns = [
         'nameOfIssuer',
@@ -376,8 +379,6 @@ def parse_contents_to_raw_csv(
         )
         # Add the cik to the set
         cik_set.add(cik)
-
-    # Cleanup
     # Get the list of cik folders
     cik_folders = get_cik_folders(
         cik_set = cik_set,
@@ -403,22 +404,22 @@ def cik_to_company_conformed_name(
     cik,
     verbose = False,
 ):
+    # If no cik is provided, return an empty string
     if not cik:
         return ""
-
-    # Cherche tous les fichiers meta pour ce CIK
+    # Look for all metal files for this CIK
     meta_path = f"output/{cik}/meta/*.json"
     meta_files = sorted(glob.glob(meta_path), reverse=True)  # trier du plus récent au plus ancien
-
+    # If no metal files were found, return an empty string
     if not meta_files:
         return ""
-
-    # Ouvre le fichier le plus récent
+    # Open the most recent file
     latest_file = meta_files[0]
     with open(latest_file, "r", encoding="utf-8") as f:
         metadata = json.load(f)
-
+    # Take the conformed company name
     company_conformed_name = metadata.get("company_conformed_name", "")
+    # Return the result
     return company_conformed_name
 
 def convert_raw_csv_to_clean_csv(
@@ -544,15 +545,11 @@ def merge_portfolio_proportions(
     verbose = False,
     cik_set = None,
 ):
-    """
-    L'implémentation avec Polars est beaucoup plus rapide que Pandas.
-    Soit Pandas prend 500 secondes ou 75 Go de RAM.
-    Soit Polars prend presque pas de RAM et roule en une fraction de seconde...
-    """
     # Mapping to the columns names
     target_variable_to_target_column = {
         'proportion': 'portfolio %',
-        'shares': 'shrsOrPrnAmt_sshPrnamt',
+        'shares':     'shrsOrPrnAmt_sshPrnamt',
+        'value':      'value',
     }
     # Define the merge keys
     merge_keys = [
@@ -564,6 +561,7 @@ def merge_portfolio_proportions(
     target_variables  = [
         'proportion',
         'shares',
+        'value',
     ]
     # Get the list of cik folders
     cik_folders = get_cik_folders(
@@ -665,7 +663,7 @@ def merge_portfolio_proportions(
 def create_header():
     return html.A(
         href="https://github.com/Noe-AC/diff13f",
-        target="_blank",  # ouvre dans un nouvel onglet
+        target="_blank", # ouvre dans un nouvel onglet
         children=[
             html.Img(
                 src="/assets/DIFF13F_1024x1024.png",
@@ -688,7 +686,6 @@ def create_header():
                     "fontWeight": "600",
                     "textShadow": "0 0 1px #00ff66, 0 0 3px #00ff66, 0 0 2px #00ff66",  # halo vert léger
                     "color": "black",
-                    #"fontWeight": "200",  # lettres plus fines
                 },
             ),
         ],
@@ -955,7 +952,6 @@ def generate_one_quarter_figure(
     # Take the data corresponding to that quarter
     input_file = f"output/{cik}/merge/{merge_key}_to_proportion.csv"
     df = pl.read_csv(input_file, columns=[merge_key, quarter])
-    # TypeError: the `columns` argument should contain a list of all integers or all string values
     # Sort and top N and convert to Pandas for Plotly
     df = df.filter(
         pl.col(quarter).is_not_null()
@@ -967,13 +963,23 @@ def generate_one_quarter_figure(
     ).to_pandas()
     # Rename the column
     df.rename(columns={quarter: "proportion"}, inplace=True)
-
+    # Créer une colonne pour les noms complets
+    df["full_name"] = df[merge_key]
+    # Tronquer les noms trop longs
+    max_chars = 30
+    df[merge_key] = df[merge_key].apply(
+        lambda x: x if len(x) <= max_chars else x[:max_chars-1] + "\u2026"
+    )
     # Création du barplot cyberpunk
     fig = px.bar(
-        data_frame = df,
-        x          = 'proportion',
-        y          = merge_key,
+        data_frame  = df,
+        x           = 'proportion',
+        y           = merge_key,
         orientation = 'h',
+        hover_data  = {
+            'full_name': True,
+            'proportion': ':.2f',
+        },
     )
     fig.update_layout(
         title={
@@ -1005,7 +1011,8 @@ def generate_one_quarter_figure(
     fig.update_traces(
         marker_color  = "#00ffcc",
         textposition  = "outside",
-        hovertemplate = "<b>%{y}</b><br>%{x:.2f}%",
+        hovertemplate = "<b>%{customdata[0]}</b><br>%{x:.2f}%",
+        customdata    = df[["full_name"]].values,
     )
     fig.update_yaxes(
         autorange = "reversed",
@@ -1113,6 +1120,15 @@ def generate_two_quarters_figure(
     # Prendre les top N en valeur absolue
     df = df.sort("ratio", descending=True).head(top_n).to_pandas()
 
+    # Conserver les noms complets pour le hover
+    df["full_name"] = df[merge_key]
+
+    # Tronquer les noms trop longs pour l'affichage
+    max_chars = 30
+    df[merge_key] = df[merge_key].apply(
+        lambda x: x if len(x) <= max_chars else x[:max_chars-1] + "\u2026"
+    )
+
     # Créer le barplot horizontal
     fig = px.bar(
         data_frame  = df,
@@ -1120,7 +1136,12 @@ def generate_two_quarters_figure(
         y           = merge_key,
         orientation = "h",
         labels      = {
-            "ratio": f"Variation {quarter0}→{quarter1}", merge_key: "Name",
+            "ratio": f"Variation {quarter0}→{quarter1}",
+            merge_key: "Name",
+        },
+        hover_data  = {
+            "full_name": True,
+            "ratio": ':.2f',
         },
     )
     fig.update_layout(
@@ -1150,8 +1171,12 @@ def generate_two_quarters_figure(
     )
     fig.update_traces(
         marker_color = "#00ffcc",
-        textfont     = dict(color="white",
-        family       = "monospace"),
+        textfont     = dict(
+            color  = "white",
+            family = "monospace",
+        ),
+        hovertemplate = "<b>%{customdata[0]}</b><br>Ratio : %{x:.2f}",
+        customdata    = df[["full_name"]].values,
     )
     # mettre les plus grandes valeurs en haut
     fig.update_yaxes(
@@ -1311,7 +1336,7 @@ def generate_quarters(
             quarters.append(f"{year}-q{q}")
     return quarters
 
-def generate_all_quarters_figure(
+def generate_all_quarters_top_n_figure(
     cik,
     merge_key ='name',
     top_n     = 18,
@@ -1333,7 +1358,7 @@ def generate_all_quarters_figure(
             title = title,
         )
 
-    # On s'assure que la taille est ok
+    # Vérification des dimensions
     if df_pr.shape[0] == 0 or df_pr.shape[1] == 0:
         title = "No data available"
         return generate_default_figure(
@@ -1365,9 +1390,21 @@ def generate_all_quarters_figure(
         latest_quarter = latest_quarter,
     )
 
+    # Top N titres du dernier trimestre
     top_titles = df_transposed.loc[latest_quarter].nlargest(top_n).index
+
+    # Créer un Dataframe réduit avec ces titres
     df_top = df_transposed[top_titles].copy()
 
+    # Tronquer les noms trop longs
+    max_chars = 30
+    truncated_titles = [
+        t if len(t) <= max_chars else t[:max_chars - 1] + "\u2026"
+        for t in top_titles
+    ]
+    title_map = dict(zip(top_titles, truncated_titles))  # mapping complet ↔ tronqué
+
+    # Palette de couleurs
     five_cyber_colors = [
         "#00ffcc",  # cyan
         "#ff00ff",  # magenta
@@ -1399,8 +1436,8 @@ def generate_all_quarters_figure(
 
     # Création de la figure Plotly
     fig = go.Figure()
-    for i, title in enumerate(top_titles):
-        s = df_top[title].dropna()
+    for i, full_name in enumerate(top_titles):
+        s = df_top[full_name].dropna()
         if len(s) > 0:
             s = s.reindex(quarters)
             color = cyber_colors[i % len(cyber_colors)]
@@ -1417,16 +1454,28 @@ def generate_all_quarters_figure(
                 )
             )
 
-            # Ligne principale fine
+            hovertemplate = (
+                f"<b>{full_name}</b><br>"
+                + "Quarter: %{x}<br>"
+                + "Proportion: %{y:.2f}%<extra></extra>"
+            )
+
+            # Ligne principale fine + hover complet
             fig.add_trace(
                 go.Scatter(
-                    x=s.index,
-                    y=s.values,
-                    mode='lines+markers',
-                    name=title,
-                    line=dict(color=color, width=3),   # ligne principale
-                    marker=dict(size=6, color=color),
-                    hovertemplate='%{x}<br>%{y:.2f} %<br>',
+                    x            = s.index,
+                    y            = s.values,
+                    mode         = 'lines+markers',
+                    name         = title_map[full_name],  # nom tronqué dans la légende
+                    line         = dict(
+                        color = color,
+                        width = 3,
+                    ),
+                    marker       = dict(
+                        size  = 6,
+                        color = color,
+                    ),
+                    hovertemplate=hovertemplate,
                 )
             )
 
@@ -1437,7 +1486,11 @@ def generate_all_quarters_figure(
             "x": 0.5,              # centré horizontalement
             "xanchor": "center",
             "yanchor": "top",
-            "font": {"family": "monospace", "size": 20, "color": "white"},
+            "font": {
+                "family": "monospace",
+                "size": 20,
+                "color": "white",
+            },
         },
         autosize      = True,
         height        = FIG_HEIGHT,
@@ -1466,7 +1519,182 @@ def generate_all_quarters_figure(
     fig.update_xaxes(
         type='category',
         categoryorder='array',
-        categoryarray=quarters,   # <-- impose l'ordre complet des x
+        categoryarray=quarters,
+        tickmode='array',
+        tickvals=ticks,
+        ticktext=ticks,
+        tickangle=45,
+        tickfont=dict(family='monospace', color='white'),
+    )
+
+    return fig
+
+def correct_13f_values(
+    df_transposed,
+    jump_threshold = 50,
+    fallback_quarter = '2022-q4',
+):
+    """
+    Corrige les trimestres en milliers de dollars si un saut est détecté.
+    df_transposed : DataFrame avec les quarters en index et les titres en colonnes.
+    """
+    if df_transposed.empty:
+        return df_transposed
+
+    # Parcours des quarters du plus récent au plus ancien
+    reversed_quarters = df_transposed.index[::-1]
+    df_rev = df_transposed.reindex(reversed_quarters)
+
+    # Somme par trimestre
+    total_values = df_rev.sum(axis=1)
+
+    # Détecter le premier saut (> jump_threshold) depuis la fin
+    transition_quarter = None
+    for i in range(1, len(total_values)):
+        if total_values.iloc[i] > 0:
+            ratio = total_values.iloc[i-1] / total_values.iloc[i]
+            if ratio > jump_threshold:
+                transition_quarter = total_values.index[i]
+                break
+
+    if transition_quarter is None:
+        transition_quarter = fallback_quarter
+
+    # Multiplier par 1000 tous les trimestres avant le point de transition
+    idx_to_correct = df_transposed.index[df_transposed.index <= transition_quarter]
+    df_transposed.loc[idx_to_correct] *= 1000
+
+    return df_transposed
+
+def generate_all_quarters_total_value_figure(
+    cik,
+    merge_key = 'name',
+):
+    """
+    Affiche la capitalisation totale (valeur totale du portefeuille)
+    par trimestre pour un CIK donné.
+    """
+    if not cik:
+        title = "Import at least one CIK"
+        return generate_default_figure(title=title)
+
+    # Lecture du CSV avec les valeurs
+    input_file_val = f'output/{cik}/merge/{merge_key}_to_value.csv'
+    try:
+        df_val = pd.read_csv(input_file_val, index_col=merge_key)
+    except:
+        title = "Merge file unavailable"
+        return generate_default_figure(title=title)
+
+    # Vérifications de dimensions
+    if df_val.shape[0] == 0 or df_val.shape[1] == 0:
+        title = "No data available"
+        return generate_default_figure(title=title)
+
+    # Transposer pour avoir les quarters en index
+    df_transposed = df_val.T
+    df_transposed.index.name = "Quarter"
+    df_transposed.columns.name = merge_key
+    df_transposed = df_transposed.sort_index()
+
+    if df_transposed.empty:
+        return generate_default_figure(title="No data available")
+
+    df_transposed = correct_13f_values(df_transposed)
+
+    # Compléter les trimestres manquants
+    quarters = df_transposed.index.to_list()
+    first_quarter  = quarters[0]
+    latest_quarter = quarters[-1]
+    quarters = generate_quarters(
+        first_quarter=first_quarter,
+        latest_quarter=latest_quarter,
+    )
+
+    # Calculer la valeur totale par trimestre (somme sur tous les titres)
+    total_values = df_transposed.sum(axis=1).reindex(quarters)
+
+    # Conversion en milliards de dollars
+    total_values_B = total_values / 1e9
+
+    # Palette de couleurs cyber
+    cyber_cyan = "#00ffff"
+    cyber_purple = "#ff00ff"
+
+    # Création de la figure
+    fig = go.Figure()
+
+    # Glow (halo lumineux)
+    fig.add_trace(
+        go.Scatter(
+            x=total_values_B.index,
+            y=total_values_B.values,
+            mode='lines',
+            line=dict(color=cyber_cyan, width=18),
+            opacity=0.2,
+            hoverinfo='skip',
+            showlegend=False,
+        )
+    )
+
+    # Ligne principale + hover complet
+    hovertemplate = (
+        "<b>Total portfolio value (B$)</b><br>"
+        + "Quarter: %{x}<br>"
+        + "Value: %{y:.2f} B$<extra></extra>"
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=total_values_B.index,
+            y=total_values_B.values,
+            mode='lines+markers',
+            name="Total Value",
+            line=dict(color=cyber_purple, width=4),
+            marker=dict(size=8, color=cyber_purple),
+            hovertemplate=hovertemplate,
+        )
+    )
+
+    # Mise en forme
+    fig.update_layout(
+        title={
+            "text": f"Total portfolio value over time for {cik}",
+            "y": 0.95,
+            "x": 0.5,
+            "xanchor": "center",
+            "yanchor": "top",
+            "font": {"family": "monospace", "size": 20, "color": "white"},
+        },
+        autosize=True,
+        height=FIG_HEIGHT,
+        width=FIG_WIDTH,
+        xaxis_title="Quarter",
+        yaxis_title="Total Value (Billion $)",
+        plot_bgcolor="black",
+        paper_bgcolor="black",
+        font=dict(color="white", family="monospace"),
+        legend=dict(font=dict(family="monospace", color="white")),
+        margin=dict(l=40, r=40, t=60, b=40),
+        showlegend=False,
+    )
+
+    # Axe Y sans grille
+    fig.update_yaxes(showgrid=False)
+
+    # Choisir les ticks à afficher sur X
+    n_quarters = 20
+    if len(quarters) > n_quarters:
+        step = max(1, len(quarters) // n_quarters)
+        ticks = quarters[::step]
+    else:
+        ticks = quarters
+
+    # Axe X avec ordre des trimestres
+    fig.update_xaxes(
+        type='category',
+        categoryorder='array',
+        categoryarray=quarters,
         tickmode='array',
         tickvals=ticks,
         ticktext=ticks,
@@ -1479,20 +1707,50 @@ def generate_all_quarters_figure(
 def create_all_quarters(
     cik,
 ):
-    # Génère la figure
-    fig = generate_all_quarters_figure(
-        cik     = cik,
-    )
+
+    dropdown_options     = [
+        {'label': 'Top N', 'value': 'top_n'},
+        {'label': 'Total Value', 'value': 'total_value'},
+    ]
+    #dropdown_value       = "top_n"
+    dropdown_value       = "total_value"
+    dropdown_placeholder = "Choose a figure"
+
+    if dropdown_value=="top_n":
+        # Génère la figure des top N proportions récentes
+        fig = generate_all_quarters_top_n_figure(
+            cik = cik,
+        )
+    else:
+        # Génère la figure de la valeur totale dans le temps
+        fig = generate_all_quarters_total_value_figure(
+            cik = cik,
+        )
 
     return html.Div(
         children=[
-            # Un espace vertical pour aligner la figure all-quarters avec les autres figures
-            html.Div(
-                children = [],
-                style={
-                    "height" : "40px",
+            # Dropdown pour le choix de la visualisation
+            dcc.Dropdown(
+                id          = "all-quarters-dropdown",
+                options     = dropdown_options,
+                value       = dropdown_value,
+                placeholder = dropdown_placeholder,
+                clearable   = False,
+                style = {
+                    "width": "150px",
+                    "height": "40px",
+                    "color": "white",
+                    "backgroundColor": "black",
+                    "borderRadius": "5px",
+                    "boxShadow": "0 0 10px #00ffcc",
+                    "fontFamily": "monospace",
+                    "flex": "1",
+                    "minWidth": "0",  # important pour que flex fonctionne dans un parent flex
+                    "position": "relative",
+                    "zIndex": 10,
                     "marginBottom": "10px",
                 },
+                className="cyberpunk-dropdown",
             ),
             html.Div(
                 dcc.Graph(
@@ -1701,6 +1959,7 @@ def register_callbacks(
         Input("one-quarter-dropdown", "value"),
         Input("two-quarters-dropdown-0", "value"),
         Input("two-quarters-dropdown-1", "value"),
+        Input("all-quarters-dropdown", "value"),
         prevent_initial_call=True
     )
     def update_latest_company_name(
@@ -1709,6 +1968,7 @@ def register_callbacks(
         one_quarter_dropdown_value,
         two_quarters_dropdown_0_value,
         two_quarters_dropdown_1_value,
+        all_quarters_dropdown_value,
     ):
         ctx = callback_context
         trigger_type = ctx.triggered[0]["prop_id"]
@@ -1762,9 +2022,20 @@ def register_callbacks(
                 quarter1 = two_quarters_dropdown_1_value,
             )
             # Update the all quarters figure
-            all_quarters_graph_figure = generate_all_quarters_figure(
+            all_quarters_graph_figure = generate_all_quarters_top_n_figure(
                 cik      = cik_dropdown_value,
             )
+
+            if all_quarters_dropdown_value=="top_n":
+                # Génère la figure des top N proportions récentes
+                all_quarters_graph_figure = generate_all_quarters_top_n_figure(
+                    cik = cik_dropdown_value,
+                )
+            else:
+                # Génère la figure de la valeur totale dans le temps
+                all_quarters_graph_figure = generate_all_quarters_total_value_figure(
+                    cik = cik_dropdown_value,
+                )
 
         elif trigger_type=='one-quarter-dropdown.value':
 
@@ -1792,6 +2063,19 @@ def register_callbacks(
                 quarter1 = two_quarters_dropdown_1_value,
                 top_n    = 20,
             )
+
+        elif trigger_type=="all-quarters-dropdown.value":
+
+            if all_quarters_dropdown_value=="top_n":
+                # Génère la figure des top N proportions récentes
+                all_quarters_graph_figure = generate_all_quarters_top_n_figure(
+                    cik = cik_dropdown_value,
+                )
+            else:
+                # Génère la figure de la valeur totale dans le temps
+                all_quarters_graph_figure = generate_all_quarters_total_value_figure(
+                    cik = cik_dropdown_value,
+                )
 
         # On rend le résultat
         return (
